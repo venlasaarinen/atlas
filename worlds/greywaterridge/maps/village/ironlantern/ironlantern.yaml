@@ -1,0 +1,13 @@
+id: ironlantern
+title: "The Iron Lantern"
+map: village
+coordinates: [43.3, 60.1]
+background: ironlanternbg.png
+
+character_positions: 
+  - pos: [20.4, 41.3]
+  - pos: [24.3, 76.3]
+  - pos: [46.9, 60.4]
+  - pos: [65.9, 50.1] 
+    keywords: ["lonely"]
+  - pos: [86.8, 57.7]

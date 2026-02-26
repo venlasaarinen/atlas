@@ -5,6 +5,7 @@ version: "0.1.0"
 accent: "#ffffff"
 start_map: village
 cover_image: assets/cover.jpg
+soundtrack: assets/forsaken.mp3
 
 player:
   name: "Astrid"

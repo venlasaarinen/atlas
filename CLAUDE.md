@@ -190,3 +190,7 @@ npm run preview    # Preview production build
 - Node.js lives at `C:\Program Files\nodejs\`
 - The server runs on **http://localhost:5173**
 - Always use `preview_start` / `preview_stop` rather than running npm via Bash
+
+## Testing 
+
+do not try to look at screenshots when testing. rely on me to tell you if it worked or not 

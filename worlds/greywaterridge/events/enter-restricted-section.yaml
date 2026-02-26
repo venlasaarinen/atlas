@@ -1,0 +1,6 @@
+id: enter-restricted-section
+conditions: []
+actions:
+  - show_text: >
+      The iron gate swings open with a sound like a held breath released.
+      The books here have no titles. They do not want to be found.

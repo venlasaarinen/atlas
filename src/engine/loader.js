@@ -9,6 +9,20 @@ const worldGlob = import.meta.glob('../../worlds/*/world.yaml', {
   import: 'default',
 });
 
+/**
+ * Character YAML discovery — two patterns cover both folder layouts:
+ *   worlds/<world>/characters/<id>/<id>.yaml  (character in own subfolder)
+ *   worlds/<world>/characters/<id>.yaml        (character file at root level)
+ */
+const _charGlobDeep = import.meta.glob('../../worlds/*/characters/*/*.yaml', {
+  query: '?raw',
+  import: 'default',
+});
+const _charGlobFlat = import.meta.glob('../../worlds/*/characters/*.yaml', {
+  query: '?raw',
+  import: 'default',
+});
+
 export async function loadAllWorlds() {
   const worlds = [];
 
@@ -28,10 +42,61 @@ export async function loadAllWorlds() {
 }
 
 /**
- * Load a single YAML file by path (relative to project root).
- * Useful for loading maps, characters, and events on demand.
+ * Load all characters for a given world folder.
+ * Each character object is augmented with `_assetPath` — the directory URL
+ * prefix used to resolve portrait and other per-character assets, e.g.
+ *   "/worlds/greywaterridge/characters/johncallahan/"
  *
- * @param {string} rawString  Already-fetched raw YAML string
+ * @param {string} worldFolder  e.g. "greywaterridge"
+ * @returns {Promise<object[]>}
+ */
+export async function loadAllCharacters(worldFolder) {
+  const characters = [];
+  const entries = [
+    ...Object.entries(_charGlobDeep),
+    ...Object.entries(_charGlobFlat),
+  ];
+
+  for (const [path, load] of entries) {
+    const m = path.match(/worlds\/([^/]+)\//);
+    if (!m || m[1] !== worldFolder) continue;
+    try {
+      const raw  = await load();
+      const data = yaml.load(raw);
+      // Strip leading "../../" and the filename to get the directory URL
+      data._assetPath = path
+        .replace(/^\.\.\/\.\./, '')
+        .replace(/[^/]+\.yaml$/, '');
+      characters.push(data);
+    } catch (err) {
+      console.error(`[loader] Failed to parse character ${path}:`, err);
+    }
+  }
+
+  return characters;
+}
+
+/**
+ * Fetch and parse a YAML file at runtime by URL path.
+ * Returns null if the file is missing or the fetch fails.
+ *
+ * @param {string} path  Absolute URL path, e.g. /worlds/foo/maps/bar/bar.yaml
+ * @returns {Promise<object|null>}
+ */
+export async function loadYaml(path) {
+  try {
+    const res = await fetch(path);
+    if (!res.ok) return null;
+    return yaml.load(await res.text());
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Parse an already-fetched raw YAML string.
+ *
+ * @param {string} rawString
  * @returns {object}
  */
 export function parseYaml(rawString) {

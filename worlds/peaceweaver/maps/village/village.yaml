@@ -1,6 +1,6 @@
 id: village
 title: "Village"
-background: assets/village_day.png
+background: village_day.png
 soundtrack: assets/ambient-library.ogg
 
 locations:

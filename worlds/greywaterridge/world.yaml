@@ -1,0 +1,13 @@
+id: greywater
+title: "Greywater Ridge"
+tagline: "“The wind blew cold across the plain, and we rode on.”"
+version: "0.1.0"
+accent: "#ffffff"
+start_map: village
+cover_image: assets/cover.jpg
+soundtrack: assets/forsaken.mp3
+
+player:
+  name: "Astrid"
+  sprite: assets/player.png
+

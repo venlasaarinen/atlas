@@ -1,0 +1,14 @@
+id: village
+title: "Village"
+background: village_day.png
+soundtrack: assets/ambient-library.ogg
+
+locations:
+  - ironlantern
+  - crimshawinn
+  - gunshop
+  - fishingbend
+  - sheriff
+
+on_enter:
+  - event: first-library-visit
