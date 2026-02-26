@@ -1,0 +1,12 @@
+id: peaceweaver
+title: "peaceweaver"
+tagline: "Secrets preserved in dust and shadow"
+version: "0.1.0"
+accent: "#ffffff"
+start_map: village
+cover_image: assets/cover.jpg
+
+player:
+  name: "Astrid"
+  sprite: assets/player.png
+

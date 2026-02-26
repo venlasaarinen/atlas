@@ -1,0 +1,9 @@
+id: first-library-visit
+conditions:
+  - flag: visited_library
+    value: false
+actions:
+  - set_flag: { visited_library: true }
+  - show_text: >
+      The dust motes hang in the air like forgotten words. Somewhere deep in
+      the stacks, a page turns on its own.

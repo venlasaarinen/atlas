@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Atlas — Story Engine</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      background: #0d0d0f;
+      overflow: hidden;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    #game-canvas {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+    }
+
+    /* ── Cover Backdrop ──────────────────────────── */
+
+    #cover-backdrop {
+      position: absolute;
+      inset: 0;
+      background-size: cover;
+      background-position: center;
+      opacity: 0;
+      transition: opacity 0.6s ease;
+      z-index: 0;
+    }
+
+    #cover-backdrop.active {
+      opacity: 1;
+    }
+
+    #cover-backdrop::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg, rgba(13,13,15,0.72) 0%, rgba(17,17,22,0.72) 100%);
+    }
+
+    /* ── Title Screen ─────────────────────────────── */
+
+    #title-screen {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background:
+        radial-gradient(ellipse 80% 60% at 50% 40%, rgba(196,165,90,0.04) 0%, transparent 70%),
+        linear-gradient(180deg, #0d0d0f 0%, #111116 100%);
+      opacity: 0;
+      transition: opacity 1s ease;
+      pointer-events: none;
+    }
+
+    #title-screen.visible {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    #title-screen.hiding {
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.6s ease;
+    }
+
+    /* ── Header ─────────────────────────────────── */
+
+    .title-header, #world-list {
+      position: relative;
+      z-index: 1;
+    }
+
+    .title-header {
+      text-align: center;
+      margin-bottom: 3.5rem;
+      animation: fadeUp 1.2s ease forwards;
+      opacity: 0;
+    }
+
+    .engine-title {
+      font-family: 'Cinzel', 'Times New Roman', serif;
+      font-size: clamp(3.5rem, 10vw, 7rem);
+      font-weight: 700;
+      letter-spacing: 0.35em;
+      color: #c4a55a;
+      text-shadow:
+        0 0 30px rgba(196, 165, 90, 0.35),
+        0 0 60px rgba(196, 165, 90, 0.12);
+      line-height: 1;
+      margin-bottom: 0.4rem;
+    }
+
+    .engine-divider {
+      width: 120px;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(196,165,90,0.5), transparent);
+      margin: 0.8rem auto;
+    }
+
+    .engine-subtitle {
+      font-family: 'Crimson Text', Georgia, serif;
+      font-size: 0.8rem;
+      letter-spacing: 0.6em;
+      text-transform: uppercase;
+      color: #6b6055;
+    }
+
+    /* ── World Cards ────────────────────────────── */
+
+    #world-list {
+      display: flex;
+      gap: 1.5rem;
+      justify-content: center;
+      flex-wrap: wrap;
+      padding: 0 2rem;
+      animation: fadeUp 1.2s 0.3s ease forwards;
+      opacity: 0;
+    }
+
+    .world-card {
+      position: relative;
+      width: 260px;
+      background: rgba(20, 20, 26, 0.9);
+      border: 1px solid rgba(196, 165, 90, 0.15);
+      border-radius: 2px;
+      padding: 2rem 1.75rem;
+      cursor: pointer;
+      transition: transform 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+      text-align: left;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .world-card::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--card-accent, #c4a55a), transparent);
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+
+    .world-card:hover {
+      transform: translateY(-5px);
+      border-color: rgba(196, 165, 90, 0.35);
+      box-shadow:
+        0 12px 40px rgba(0, 0, 0, 0.6),
+        0 0 20px rgba(196, 165, 90, 0.06);
+    }
+
+    .world-card:hover::after {
+      opacity: 1;
+    }
+
+    .world-card-label {
+      font-family: 'Cinzel', serif;
+      font-size: 0.62rem;
+      letter-spacing: 0.25em;
+      text-transform: uppercase;
+      color: #3a3530;
+      margin-bottom: 0.75rem;
+    }
+
+    .world-title {
+      font-family: 'Cinzel', 'Times New Roman', serif;
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: #ddd5c4;
+      letter-spacing: 0.04em;
+      margin-bottom: 0.75rem;
+      line-height: 1.3;
+    }
+
+    .world-tagline {
+      font-family: 'Crimson Text', Georgia, serif;
+      font-style: italic;
+      font-size: 0.95rem;
+      color: #6b6055;
+      line-height: 1.6;
+      flex: 1;
+    }
+
+    .begin-btn {
+      display: block;
+      width: 100%;
+      margin-top: 1.75rem;
+      background: transparent;
+      border: 1px solid rgba(196, 165, 90, 0.25);
+      color: #8a7a5a;
+      padding: 0.55rem 1rem;
+      font-family: 'Cinzel', serif;
+      font-size: 0.62rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .begin-btn:hover {
+      background: rgba(196, 165, 90, 0.08);
+      border-color: rgba(196, 165, 90, 0.55);
+      color: #c4a55a;
+    }
+
+    /* ── Footer ─────────────────────────────────── */
+
+    .title-footer {
+      position: absolute;
+      bottom: 2rem;
+      z-index: 1;
+      font-family: 'Crimson Text', serif;
+      font-size: 0.72rem;
+      letter-spacing: 0.2em;
+      color: #252018;
+      text-transform: uppercase;
+    }
+
+    /* ── Animations ─────────────────────────────── */
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(16px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── Status States ───────────────────────────── */
+
+    .worlds-loading {
+      font-family: 'Crimson Text', serif;
+      font-style: italic;
+      color: #3a3530;
+      letter-spacing: 0.1em;
+    }
+
+    .worlds-error {
+      font-family: 'Crimson Text', serif;
+      color: #7a4040;
+      font-style: italic;
+    }
+  </style>
+</head>
+<body>
+  <div id="game-canvas"></div>
+
+  <div id="title-screen">
+    <div id="cover-backdrop"></div>
+    <header class="title-header">
+      <h1 class="engine-title">ATLAS</h1>
+      <div class="engine-divider"></div>
+      <p class="engine-subtitle">Story Engine</p>
+    </header>
+
+    <div id="world-list">
+      <p class="worlds-loading">Searching for worlds…</p>
+    </div>
+
+    <footer class="title-footer">Select a world to begin</footer>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

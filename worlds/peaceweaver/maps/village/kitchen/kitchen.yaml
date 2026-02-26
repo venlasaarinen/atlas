@@ -1,0 +1,12 @@
+id: kitchen
+title: "Kitchen"
+description: >
+  Grand double doors open onto a vaulted hall. Dust motes hang frozen in shafts
+  of amber light. Tall oak shelves vanish into shadow above. The air smells of
+  old paper, candle wax, and something older — like stone after rain.
+map: village
+coordinates: [50, 78]
+background: kitchen.png
+
+on_enter:
+  - event: first-library-visit

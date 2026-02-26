@@ -1,0 +1,11 @@
+id: village
+title: "Village"
+background: assets/village_day.png
+soundtrack: assets/ambient-library.ogg
+
+locations:
+  - great-hall
+  - kitchen
+
+on_enter:
+  - event: first-library-visit
