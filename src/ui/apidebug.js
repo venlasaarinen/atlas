@@ -3,6 +3,9 @@
  *
  * Shows a full-screen panel listing every OpenAI API call the engine has made,
  * with pretty-printed JSON request/response detail on the right.
+ *
+ * Clicking "Edit & Re-submit" on a selected request opens a full-screen editor
+ * where you can modify the JSON body and send it again.
  */
 
 import { apiLog } from '../engine/apilogger.js';
@@ -12,6 +15,9 @@ let listBody = null;
 let detailPane = null;
 let countEl = null;
 let selectedId = null;
+let editorEl = null;
+
+const _apiKey = import.meta.env.VITE_OPENAI_API_KEY ?? '';
 
 // ── Syntax-highlighted JSON ────────────────────────────────────────────────
 
@@ -34,6 +40,10 @@ function highlightJSON(obj) {
   );
   // Then convert literal \n inside strings to real newlines for readability
   return highlighted.replace(/\\n/g, '\n');
+}
+
+function escapeHTML(str) {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 // ── Build DOM ──────────────────────────────────────────────────────────────
@@ -69,6 +79,8 @@ function buildOverlay() {
         <div class="apid-placeholder">Select a request to view details</div>
       </div>
     </div>
+    <!-- Full-screen editor (hidden by default) -->
+    <div class="apid-editor" id="apid-editor"></div>
   `;
   document.body.appendChild(el);
 
@@ -81,6 +93,7 @@ function buildOverlay() {
   listBody   = el.querySelector('#apid-list-body');
   detailPane = el.querySelector('#apid-detail');
   countEl    = el.querySelector('#apid-count');
+  editorEl   = el.querySelector('#apid-editor');
 
   el.querySelector('#apid-close').addEventListener('click', hide);
   el.querySelector('#apid-clear').addEventListener('click', () => {
@@ -102,6 +115,7 @@ function show() {
 
 function hide() {
   if (overlay) overlay.style.display = 'none';
+  closeEditor();
 }
 
 function toggle() {
@@ -154,12 +168,167 @@ function selectEntry(entry, tr) {
       <pre>${highlightJSON(entry.requestHeaders)}</pre>
       <div class="apid-sub">Body</div>
       <pre>${highlightJSON(entry.requestBody)}</pre>
+      <div class="apid-edit-bar">
+        <button class="apid-btn apid-edit-btn" id="apid-open-editor">Edit &amp; Re-submit</button>
+      </div>
     </details>
     <details class="apid-section" open>
       <summary>Response <span class="${entry.status >= 200 && entry.status < 300 ? 'apid-ok' : 'apid-err'}">${entry.status}</span></summary>
       <pre>${highlightJSON(entry.responseBody)}</pre>
     </details>
   `;
+
+  detailPane.querySelector('#apid-open-editor').addEventListener('click', () => openEditor(entry));
+}
+
+// ── Full-screen editor ────────────────────────────────────────────────────
+
+function openEditor(entry) {
+  const bodyJson = JSON.stringify(entry.requestBody, null, 2) ?? '';
+
+  editorEl.innerHTML = `
+    <div class="apid-editor-header">
+      <span class="apid-title">Edit Request Body</span>
+      <span class="apid-editor-hint">Ctrl+Enter to re-submit</span>
+      <div class="apid-actions">
+        <button class="apid-btn apid-resend-btn" id="apid-editor-send">Re-submit</button>
+        <button class="apid-btn" id="apid-editor-close">Back</button>
+      </div>
+    </div>
+    <div class="apid-editor-status-bar">
+      <span class="apid-editor-status" id="apid-editor-status"></span>
+    </div>
+    <div class="apid-editor-panels">
+      <div class="apid-editor-left">
+        <div class="apid-editor-label">Request Body</div>
+        <textarea class="apid-editor-textarea" id="apid-editor-body" spellcheck="false">${escapeHTML(bodyJson)}</textarea>
+      </div>
+      <div class="apid-editor-right">
+        <div class="apid-editor-label">Response</div>
+        <pre class="apid-editor-response" id="apid-editor-response"><span style="color:#4a4030;font-style:italic">Response will appear here after re-submit</span></pre>
+      </div>
+    </div>
+  `;
+
+  editorEl.style.display = 'flex';
+
+  const textarea = editorEl.querySelector('#apid-editor-body');
+  const sendBtn = editorEl.querySelector('#apid-editor-send');
+  const closeBtn = editorEl.querySelector('#apid-editor-close');
+
+  const doSend = () => editorSend(entry);
+
+  sendBtn.addEventListener('click', doSend);
+  closeBtn.addEventListener('click', closeEditor);
+
+  textarea.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.ctrlKey) {
+      e.preventDefault();
+      doSend();
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      closeEditor();
+    }
+    // Tab inserts spaces instead of moving focus
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      textarea.value = textarea.value.substring(0, start) + '  ' + textarea.value.substring(end);
+      textarea.selectionStart = textarea.selectionEnd = start + 2;
+    }
+  });
+
+  textarea.focus();
+}
+
+function closeEditor() {
+  if (editorEl) {
+    editorEl.style.display = 'none';
+    editorEl.innerHTML = '';
+  }
+}
+
+async function editorSend(entry) {
+  const textarea = editorEl.querySelector('#apid-editor-body');
+  const statusEl = editorEl.querySelector('#apid-editor-status');
+  const responseEl = editorEl.querySelector('#apid-editor-response');
+  const sendBtn = editorEl.querySelector('#apid-editor-send');
+
+  let parsedBody;
+  try {
+    parsedBody = JSON.parse(textarea.value);
+  } catch (err) {
+    statusEl.textContent = `Invalid JSON: ${err.message}`;
+    statusEl.className = 'apid-editor-status apid-err';
+    return;
+  }
+
+  // Disable button while in-flight
+  sendBtn.disabled = true;
+  sendBtn.textContent = 'Sending\u2026';
+  statusEl.textContent = 'Sending request\u2026';
+  statusEl.className = 'apid-editor-status';
+  responseEl.innerHTML = '<span style="color:#6a5f4b;font-style:italic">Waiting for response\u2026</span>';
+
+  // Build headers, replacing the redacted auth with the real key
+  const headers = { ...entry.requestHeaders };
+  if (_apiKey) {
+    const authKey = headers['Authorization'] !== undefined ? 'Authorization' : 'authorization';
+    if (headers[authKey] === 'Bearer ***') {
+      headers[authKey] = `Bearer ${_apiKey}`;
+    }
+  }
+
+  const start = performance.now();
+  let status = 0;
+  let responseBody = null;
+
+  try {
+    const response = await fetch(entry.url, {
+      method: entry.method,
+      headers,
+      body: JSON.stringify(parsedBody),
+    });
+    status = response.status;
+    responseBody = await response.json();
+  } catch (err) {
+    responseBody = { error: err.message };
+  }
+
+  const durationMs = Math.round(performance.now() - start);
+
+  // Log the replayed request as a new entry
+  apiLog.record({
+    label: entry.label + ' \u21BB',
+    method: entry.method,
+    url: entry.url,
+    requestHeaders: headers,
+    requestBody: parsedBody,
+    status,
+    responseBody,
+    durationMs,
+  });
+
+  // Re-enable button
+  sendBtn.disabled = false;
+  sendBtn.textContent = 'Re-submit';
+
+  const newId = apiLog.entries[apiLog.entries.length - 1].id;
+  if (status >= 200 && status < 300) {
+    statusEl.textContent = `\u2713 ${status} \u2014 ${durationMs}ms (logged #${newId})`;
+    statusEl.className = 'apid-editor-status apid-ok';
+  } else if (status > 0) {
+    statusEl.textContent = `\u2717 ${status} \u2014 ${durationMs}ms (logged #${newId})`;
+    statusEl.className = 'apid-editor-status apid-err';
+  } else {
+    statusEl.textContent = `Error \u2014 ${responseBody?.error ?? 'unknown'}`;
+    statusEl.className = 'apid-editor-status apid-err';
+  }
+
+  // Show response
+  responseEl.innerHTML = highlightJSON(responseBody);
 }
 
 // ── Live updates ───────────────────────────────────────────────────────────
@@ -186,7 +355,12 @@ export function initApiDebug() {
       toggle();
     }
     if (e.key === 'Escape' && overlay && overlay.style.display !== 'none') {
-      hide();
+      // If editor is open, close editor first; otherwise close the whole overlay
+      if (editorEl && editorEl.style.display !== 'none') {
+        closeEditor();
+      } else {
+        hide();
+      }
     }
   });
 }
@@ -351,13 +525,142 @@ const STYLES = `
     margin: 0;
   }
 
+  /* Edit & Re-submit button in the detail view */
+  .apid-edit-bar {
+    margin: 10px 0 4px;
+  }
+  .apid-edit-btn {
+    background: rgba(122, 175, 207, 0.12) !important;
+    border-color: rgba(122, 175, 207, 0.35) !important;
+    color: #7aafcf !important;
+  }
+  .apid-edit-btn:hover {
+    background: rgba(122, 175, 207, 0.22) !important;
+  }
+
+  /* ── Full-screen editor overlay ─────────────────────────────────────────── */
+  .apid-editor {
+    display: none;
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    flex-direction: column;
+    background: rgba(13, 13, 15, 0.98);
+  }
+
+  .apid-editor-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 10px 20px;
+    border-bottom: 1px solid rgba(196, 165, 90, 0.25);
+    flex-shrink: 0;
+  }
+  .apid-editor-hint {
+    font-size: 11px;
+    color: #6a5f4b;
+    font-style: italic;
+    letter-spacing: 0.03em;
+  }
+
+  .apid-editor-status-bar {
+    padding: 4px 20px;
+    min-height: 22px;
+    flex-shrink: 0;
+  }
+  .apid-editor-status {
+    font-size: 11px;
+    font-family: 'Courier New', monospace;
+    color: #6a5f4b;
+  }
+
+  .apid-editor-panels {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    gap: 0;
+  }
+  .apid-editor-left,
+  .apid-editor-right {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .apid-editor-left {
+    border-right: 1px solid rgba(196, 165, 90, 0.15);
+  }
+  .apid-editor-label {
+    font-family: 'Cinzel', serif;
+    font-size: 11px;
+    color: #6a5f4b;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 8px 16px 4px;
+    flex-shrink: 0;
+  }
+
+  .apid-editor-textarea {
+    flex: 1;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    line-height: 1.5;
+    color: #e0d6c2;
+    background: rgba(0, 0, 0, 0.3);
+    border: none;
+    border-top: 1px solid rgba(196, 165, 90, 0.1);
+    padding: 12px 16px;
+    resize: none;
+    white-space: pre;
+    tab-size: 2;
+    overflow: auto;
+    margin: 0;
+  }
+  .apid-editor-textarea:focus {
+    outline: none;
+    background: rgba(0, 0, 0, 0.4);
+  }
+
+  .apid-editor-response {
+    flex: 1;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    line-height: 1.5;
+    color: #e0d6c2;
+    background: rgba(0, 0, 0, 0.3);
+    border: none;
+    border-top: 1px solid rgba(196, 165, 90, 0.1);
+    padding: 12px 16px;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin: 0;
+  }
+
+  .apid-resend-btn {
+    background: rgba(122, 175, 207, 0.12) !important;
+    border-color: rgba(122, 175, 207, 0.35) !important;
+    color: #7aafcf !important;
+  }
+  .apid-resend-btn:hover {
+    background: rgba(122, 175, 207, 0.22) !important;
+  }
+  .apid-resend-btn:disabled {
+    opacity: 0.5;
+    cursor: wait;
+  }
+
   /* Scrollbar styling */
   .apid-list::-webkit-scrollbar,
-  .apid-detail::-webkit-scrollbar {
+  .apid-detail::-webkit-scrollbar,
+  .apid-editor-textarea::-webkit-scrollbar,
+  .apid-editor-response::-webkit-scrollbar {
     width: 6px;
   }
   .apid-list::-webkit-scrollbar-thumb,
-  .apid-detail::-webkit-scrollbar-thumb {
+  .apid-detail::-webkit-scrollbar-thumb,
+  .apid-editor-textarea::-webkit-scrollbar-thumb,
+  .apid-editor-response::-webkit-scrollbar-thumb {
     background: rgba(196, 165, 90, 0.2);
     border-radius: 3px;
   }
