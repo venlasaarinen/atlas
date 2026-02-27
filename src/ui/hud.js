@@ -129,6 +129,23 @@ export class HUD {
     this._pips = new PIXI.Graphics();
     this.container.addChild(this._pips);
     this._drawPips();
+
+    // Location name — centered, visible only when inside a location
+    this._locationLabel = new PIXI.Text({
+      text: '',
+      style: {
+        fontFamily: 'Cinzel, "Times New Roman", serif',
+        fontSize: 11,
+        fontWeight: '400',
+        fill: 0xddd5c4,
+        letterSpacing: 3,
+      },
+    });
+    this._locationLabel.anchor.set(0.5, 0.5);
+    this._locationLabel.x = this.app.screen.width / 2;
+    this._locationLabel.y = BAR_H / 2;
+    this._locationLabel.visible = false;
+    this.container.addChild(this._locationLabel);
   }
 
   _drawBar() {
@@ -354,11 +371,24 @@ export class HUD {
   //  Resize / lifecycle
   // ══════════════════════════════════════════════════════════════════════════
 
+  /** Show the location name centred in the top bar. */
+  setLocation(name) {
+    this._locationLabel.text    = String(name).toUpperCase();
+    this._locationLabel.x       = this.app.screen.width / 2;
+    this._locationLabel.visible = true;
+  }
+
+  /** Hide the location name (call when leaving a location). */
+  clearLocation() {
+    this._locationLabel.visible = false;
+    this._locationLabel.text    = '';
+  }
+
   _setupResize() {
     this._onResize = () => {
       this._drawBar();
-      this._btn.x = this.app.screen.width - 20;
-      // Close panel on resize (simpler than repositioning everything)
+      this._btn.x            = this.app.screen.width - 20;
+      this._locationLabel.x  = this.app.screen.width / 2;
       if (this._panelOpen) this._closePanel();
     };
     window.addEventListener('resize', this._onResize);

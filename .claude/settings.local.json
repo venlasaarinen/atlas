@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__Claude_Preview__preview_start",
+      "Bash(cmd.exe /c \"set PATH=C:\\\\Program Files\\\\nodejs;%PATH% && move \"\"F:\\\\Atlas\\\\worlds\\\\greywaterridge\"\" \"\"F:\\\\Atlas\\\\worlds\\\\vaevictis\"\"\")",
+      "Bash(powershell -Command \"Rename-Item ''F:\\\\Atlas\\\\worlds\\\\greywaterridge'' ''vaevictis''\")",
+      "Bash(powershell -Command \"Rename-Item ''F:\\\\Atlas\\\\worlds\\\\greywaterridge - Copy'' ''vaevictis''\")",
+      "Bash(powershell -Command \"robocopy ''F:\\\\Atlas\\\\worlds\\\\greywaterridge - Copy'' ''F:\\\\Atlas\\\\worlds\\\\vaevictis'' /E /NFL /NDL /NJH /NJS\")",
+      "Bash(powershell.exe -Command \"Remove-Item -Path ''F:\\\\Atlas\\\\worlds\\\\greywaterridge - Copy'' -Recurse -Force\")",
+      "Bash(powershell.exe -Command \"Test-Path ''F:\\\\Atlas\\\\worlds\\\\greywaterridge - Copy''\")"
+    ]
+  }
+}

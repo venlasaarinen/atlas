@@ -1,5 +1,7 @@
 import * as PIXI from 'pixi.js';
 import { loadYaml, loadAllCharacters, loadAllTasks } from './loader.js';
+import { Character } from './character.js';
+import { DialogueSession } from './dialogue.js';
 
 // Portrait dimensions (pixels, relative to pin origin = circle centre)
 const PW  = 68;    // portrait width
@@ -14,9 +16,22 @@ const FP  = 2;     // frame padding around portrait
  * outside a character pin to return to the map.
  */
 export class LocationManager {
-  constructor(app, taskManager) {
+  /**
+   * @param {import('pixi.js').Application} app
+   * @param {object}  taskManager
+   * @param {object}  dialogueConfig
+   * @param {import('../ui/chat.js').ChatWindow} dialogueConfig.chatWindow
+   * @param {string}  dialogueConfig.playerName
+   * @param {object}  dialogueConfig.worldAiConfig
+   */
+  constructor(app, taskManager, dialogueConfig = {}) {
     this.app              = app;
     this._taskManager     = taskManager ?? null;
+    this._chatWindow        = dialogueConfig.chatWindow ?? null;
+    this._hud               = dialogueConfig.hud ?? null;
+    this._playerName        = dialogueConfig.playerName ?? 'Player';
+    this._playerPersonality = dialogueConfig.playerPersonality ?? '';
+    this._worldAiConfig     = dialogueConfig.worldAiConfig ?? {};
     this.container        = null;
     this._onResize        = null;
     this._fadeTicker      = null;
@@ -88,23 +103,10 @@ export class LocationManager {
       await this._addCharacterPin(char, pos, container);
     }
 
-    // ── Location title ───────────────────────────────────────────────────────
-    const title = new PIXI.Text({
-      text: (locData.title ?? locData.id).toUpperCase(),
-      style: {
-        fontFamily: 'Cinzel, "Times New Roman", serif',
-        fontSize: 26,
-        fontWeight: '600',
-        fill: 0xc4a55a,
-        letterSpacing: 6,
-      },
-    });
-    title.anchor.set(0.5, 0.5);
-    title.x = this.app.screen.width  / 2;
-    title.y = this.app.screen.height * 0.42;
-    container.addChild(title);
+    // ── Location title → HUD top bar ─────────────────────────────────────────
+    this._hud?.setLocation(locData.title ?? locData.id);
 
-    // Optional description text below the title
+    // Optional description text centred on screen
     let descText = null;
     if (locData.text) {
       descText = new PIXI.Text({
@@ -121,11 +123,19 @@ export class LocationManager {
       });
       descText.anchor.set(0.5, 0);
       descText.x = this.app.screen.width / 2;
-      descText.y = title.y + 24;
+      descText.y = this.app.screen.height * 0.44;
       container.addChild(descText);
     }
 
-    // Subtle "click to return" hint at the bottom
+    // ── "Click to return" glow + hint ───────────────────────────────────────
+    // Glow layer sits below the hint text.
+    // BlurFilter gives true Gaussian falloff from a tight ellipse.
+    const returnGlow = new PIXI.Graphics();
+    const glowBlur   = new PIXI.BlurFilter({ strength: 26, quality: 4 });
+    glowBlur.padding  = 40;
+    returnGlow.filters = [glowBlur];
+    container.addChild(returnGlow);
+
     const hint = new PIXI.Text({
       text: 'CLICK TO RETURN',
       style: {
@@ -136,9 +146,50 @@ export class LocationManager {
       },
     });
     hint.anchor.set(0.5, 1);
-    hint.x = this.app.screen.width  / 2;
-    hint.y = this.app.screen.height - 28;
+    hint.x         = this.app.screen.width  / 2;
+    hint.y         = this.app.screen.height - 16;
+    hint.eventMode = 'static';
+    hint.cursor    = 'pointer';
+    hint.hitArea   = new PIXI.Rectangle(-100, -40, 200, 50);
     container.addChild(hint);
+
+    // Animated glow that fades in/out from the bottom on hover
+    let glowTarget = 0;
+    let glowAlpha  = 0;
+    const drawReturnGlow = (alpha) => {
+      returnGlow.clear();
+      if (alpha <= 0.001) return;
+      const { width, height } = this.app.screen;
+      const cx = width / 2;
+      const cy = height + 8;  // slightly below the bottom edge so only top half peeks up
+      // Two tight ellipses — the BlurFilter softens them into a Gaussian bloom
+      returnGlow.ellipse(cx, cy, 110, 44).fill({ color: 0xc4a55a, alpha: alpha * 0.38 });
+      returnGlow.ellipse(cx, cy,  55, 22).fill({ color: 0xd4b870, alpha: alpha * 0.22 });
+    };
+    const tickGlow = () => {
+      glowAlpha += (glowTarget - glowAlpha) * 0.08;
+      drawReturnGlow(glowAlpha);
+    };
+    PIXI.Ticker.shared.add(tickGlow);
+    this._tickerCallbacks.push(tickGlow);
+
+    hint.on('pointerenter', () => {
+      glowTarget               = 1;
+      hint.style.fill          = 0xddd5c4;
+      hint.style.letterSpacing = 4;
+    });
+    hint.on('pointerleave', () => {
+      glowTarget               = 0;
+      hint.style.fill          = 0x4a4030;
+      hint.style.letterSpacing = 3;
+    });
+    hint.on('pointertap', (e) => {
+      e.stopPropagation();
+      this._fadeTo(0, 350, () => {
+        this._cleanup();
+        onBack?.();
+      });
+    });
 
     // ── Task pins (rendered after title so they sit on top) ───────────────
     if (this._taskManager) {
@@ -159,26 +210,19 @@ export class LocationManager {
       }
     }
 
-    // Full-screen hit area for click-to-return
-    container.eventMode = 'static';
-    container.hitArea   = new PIXI.Rectangle(0, 0, this.app.screen.width, this.app.screen.height);
-    container.cursor    = 'pointer';
-
     // ── Resize ──────────────────────────────────────────────────────────────
     this._onResize = () => {
       const { width, height } = this.app.screen;
       if (bg) this._fitSprite(bg);
       this._drawVignette(vignette);
-      title.x = width  / 2;
-      title.y = height * 0.42;
       if (descText) {
         descText.x = width / 2;
-        descText.y = title.y + 24;
+        descText.y = height * 0.44;
         descText.style.wordWrapWidth = Math.min(width * 0.55, 460);
       }
-      hint.x  = width  / 2;
-      hint.y  = height - 28;
-      container.hitArea = new PIXI.Rectangle(0, 0, width, height);
+      hint.x = width  / 2;
+      hint.y = height - 16;
+      drawReturnGlow(glowAlpha);
       for (const { pinContainer, cx, cy } of this._charPins) {
         pinContainer.x = (cx / 100) * width;
         pinContainer.y = (cy / 100) * height;
@@ -190,15 +234,8 @@ export class LocationManager {
     };
     window.addEventListener('resize', this._onResize);
 
-    // ── Fade in, then wait for click ─────────────────────────────────────
+    // ── Fade in ────────────────────────────────────────────────────────────
     this._fadeTo(1, 500);
-
-    container.on('pointertap', () => {
-      this._fadeTo(0, 350, () => {
-        this._cleanup();
-        onBack?.();
-      });
-    });
   }
 
   // ── Private ────────────────────────────────────────────────────────────────
@@ -391,7 +428,14 @@ export class LocationManager {
     // Stop propagation so clicking a character doesn't trigger click-to-return
     pin.on('pointertap', (e) => {
       e.stopPropagation();
-      console.log(`[location] character tapped: ${charData.id} (${charData.name ?? charData.id})`);
+      if (this._chatWindow) {
+        const char    = new Character(charData);
+        char._assetPath = charData._assetPath ?? '';
+        const session = new DialogueSession(char, this._playerName, this._worldAiConfig, this._playerPersonality);
+        this._chatWindow.open(char, session);
+      } else {
+        console.log(`[location] character tapped: ${charData.id} (no chat window configured)`);
+      }
     });
 
     container.addChild(pin);
@@ -442,6 +486,7 @@ export class LocationManager {
   }
 
   _cleanup() {
+    this._hud?.clearLocation();
     if (this._fadeTicker) {
       PIXI.Ticker.shared.remove(this._fadeTicker);
       this._fadeTicker = null;

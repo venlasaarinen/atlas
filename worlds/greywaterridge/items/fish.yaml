@@ -1,4 +1,5 @@
 id: fish
 name: "Fish"
-description: "A fish. Good to eat. Or to trade, with the right people."
+description: "A fresh catch from the river bend. Good to eat, or to trade."
+value: 5
 image: fish.png

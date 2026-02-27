@@ -5,7 +5,8 @@ import { FlagStore }        from './flags.js';
 import { Inventory }        from './inventory.js';
 import { DayCycle }         from './daycycle.js';
 import { HUD }              from '../ui/hud.js';
-import { loadAllItems }     from './loader.js';
+import { ChatWindow }       from '../ui/chat.js';
+import { loadAllItems, loadYaml } from './loader.js';
 import { audioManager }     from './audio.js';
 
 /**
@@ -22,6 +23,7 @@ export class WorldManager {
     this._inventory        = new Inventory();
     this._dayCycle         = null;
     this._hud              = null;
+    this._chatWindow       = new ChatWindow();
     this._itemDefs         = new Map();
   }
 
@@ -43,12 +45,26 @@ export class WorldManager {
     if (this._taskManager)     this._taskManager.destroy();
     if (this._hud)             this._hud.destroy();
 
+    // Load dialogue rules (optional per-world file)
+    const dialogueRules = await loadYaml(`/worlds/${worldData._folder}/dialogue.yaml`);
+
     // Load item definitions for this world
     const itemsList = await loadAllItems(worldData._folder);
     this._itemDefs = new Map();
     for (const item of itemsList) {
       this._itemDefs.set(item.id, item);
     }
+
+    // Populate player starting inventory from world.yaml player.start_inventory
+    this._inventory = new Inventory();
+    for (const entry of (worldData.player?.start_inventory ?? [])) {
+      const def = this._itemDefs.get(entry.item);
+      if (!def) { console.warn(`[world] start_inventory: unknown item "${entry.item}"`); continue; }
+      for (let i = 0; i < (entry.quantity ?? 1); i++) this._inventory.add(def);
+    }
+
+    // Give the chat window access to the live inventory and item definitions
+    this._chatWindow.setRefs(this._inventory, this._itemDefs);
 
     this._dayCycle        = new DayCycle();
     this._hud             = new HUD(app, this._inventory, this._itemDefs, this._dayCycle);
@@ -60,7 +76,13 @@ export class WorldManager {
         this._mapManager.setNightMode(this._dayCycle.isNight);
       }
     });
-    this._locationManager = new LocationManager(app, this._taskManager);
+    this._locationManager = new LocationManager(app, this._taskManager, {
+      chatWindow        : this._chatWindow,
+      hud               : this._hud,
+      playerName        : worldData.player?.name ?? 'Player',
+      playerPersonality : worldData.player?.personality ?? '',
+      worldAiConfig     : { ...(worldData.ai ?? {}), dialogueRules: dialogueRules ?? null },
+    });
     this._mapManager      = new MapManager(app);
 
     await this._mapManager.load(
