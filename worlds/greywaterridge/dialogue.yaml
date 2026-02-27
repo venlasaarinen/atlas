@@ -5,6 +5,10 @@
 # Edit it freely to tune tone, behaviour, and style without touching engine code.
 # All three sections are optional — remove any you don't need.
 
+# GPT model used for all dialogue in this world.
+# Options: gpt-4o-mini, gpt-4.1, gpt-4.1-mini, gpt-4.1-nano, gpt-5.2, gpt-5.2-mini
+model: gpt-5.2
+
 precedence: |
   Character personality overrides these style guidelines.
   These rules enforce realism, not uniformity.

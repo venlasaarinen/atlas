@@ -1,5 +1,43 @@
+import { apiLog } from './apilogger.js';
+
 /** Maximum number of messages kept verbatim in the conversation history. */
 const MAX_VERBATIM = 12;
+
+/** GPT-5+ models use max_completion_tokens instead of max_tokens. */
+function _maxTokensParam(model, value) {
+  return model.startsWith('gpt-5') ? { max_completion_tokens: value } : { max_tokens: value };
+}
+
+/**
+ * Wrap a fetch call to log the request/response to the API debug overlay.
+ * Returns the parsed JSON body (since we must consume the response to log it).
+ */
+async function _loggedFetch(url, options, label) {
+  const start = performance.now();
+  let status = 0;
+  let responseBody = null;
+
+  try {
+    const response = await fetch(url, options);
+    status = response.status;
+    responseBody = await response.json();
+    return { ok: response.ok, status, data: responseBody };
+  } catch (err) {
+    responseBody = { error: err.message };
+    throw err;
+  } finally {
+    apiLog.record({
+      label,
+      method: options.method ?? 'GET',
+      url,
+      requestHeaders: options.headers ?? {},
+      requestBody: options.body ? JSON.parse(options.body) : null,
+      status,
+      responseBody,
+      durationMs: Math.round(performance.now() - start),
+    });
+  }
+}
 
 /**
  * DialogueSession — manages a single conversation between the player
@@ -51,31 +89,35 @@ export class DialogueSession {
 
     this.history.push({ role: 'user', content: message });
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this._apiKey}`,
-      },
-      body: JSON.stringify({
-        model: this.model,
-        messages: [
-          { role: 'system', content: this.systemPrompt },
-          ...this._formattedHistory,
-        ],
-        max_tokens: 280,
-        temperature: 0.85,
-      }),
-    });
+    const requestBody = {
+      model: this.model,
+      messages: [
+        ...this.systemMessages,
+        ...this._formattedHistory,
+      ],
+      ..._maxTokensParam(this.model, 280),
+      temperature: 0.85,
+    };
 
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
+    const result = await _loggedFetch(
+      'https://api.openai.com/v1/chat/completions',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this._apiKey}`,
+        },
+        body: JSON.stringify(requestBody),
+      },
+      'chat',
+    );
+
+    if (!result.ok) {
       this.history.pop();
-      throw new Error(`OpenAI error ${response.status}: ${err.error?.message ?? 'unknown'}`);
+      throw new Error(`OpenAI error ${result.status}: ${result.data?.error?.message ?? 'unknown'}`);
     }
 
-    const data  = await response.json();
-    const reply = data.choices[0].message.content.trim();
+    const reply = result.data.choices[0].message.content.trim();
     this.history.push({ role: 'assistant', content: reply });
 
     // If history has grown past the verbatim window, archive the overflow
@@ -118,48 +160,54 @@ export class DialogueSession {
       ? contextParts.join('\n\n') + '\n\n'
       : '';
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this._apiKey}`,
-      },
-      body: JSON.stringify({
-        model: this.model,
-        messages: [
-          {
+    const choicesRequestBody = {
+      model: this.model,
+      messages: [
+        {
             role: 'system',
-            content:
-              `You generate player dialogue choices for a narrative RPG.\n\n` +
-              `The character being spoken to:\n${this.character.persona}\n\n` +
-              (this.playerPersonality
-                ? `The player character's personality:\n${this.playerPersonality}\n\nChoices must feel consistent with the player's personality while still offering tonal variety.\n\n`
-                : '') +
-              `${contextBlock}` +
-              `Generate exactly 3 short, distinct things the player could say aloud in response. ` +
-              `Each should be 1–2 sentences of spoken words only — no actions, no narration, no asterisks. ` +
-              `Vary the tone (e.g. curious, cautious, bold, deflecting, provocative). ` +
-              `Choices must feel like a natural continuation of the conversation so far. ` +
-              `Return a JSON object: { "choices": ["...", "...", "..."] }`,
-          },
-          {
-            role: 'user',
-            content: `The character just said: "${characterMessage}"\n\nGenerate 3 player response choices as JSON.`,
-          },
-        ],
-        max_tokens: 220,
-        temperature: 0.9,
-        response_format: { type: 'json_object' },
-      }),
-    });
+            content: 'You generate player dialogue choices for a narrative RPG. Generate 3 short, distinct things the player could say aloud. Each thing the players says should be 1-2 sentences of spoken words only -- no actions, narration, or asterisks. Return a JSON object: { "choices": ["...", "...", "..."] }'
+        },
+        {
+            role: 'system',
+            content: `The character the player is playing as:\n${this.playerPersonality}`
+        },
+        {
+            role: 'system',
+            content: `The character being spoken to:\n${this.character.persona}`
+        },
+        {
+          role: 'system',
+          content: contextBlock
+        },
+        {
+          role: 'user',
+          content: `The character just said: "${characterMessage}"`,
+        },
+      ],
+      ..._maxTokensParam(this.model, 220),
+      temperature: 0.9,
+      response_format: { type: 'json_object' },
+    };
 
-    if (!response.ok) {
+    const choicesResult = await _loggedFetch(
+      'https://api.openai.com/v1/chat/completions',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this._apiKey}`,
+        },
+        body: JSON.stringify(choicesRequestBody),
+      },
+      'choices',
+    );
+
+    if (!choicesResult.ok) {
       return ['Tell me more.', 'I see.', 'What do you mean?'];
     }
 
     try {
-      const data   = await response.json();
-      const parsed = JSON.parse(data.choices[0].message.content);
+      const parsed = JSON.parse(choicesResult.data.choices[0].message.content);
       if (Array.isArray(parsed.choices)) return parsed.choices.slice(0, 3);
       const arr = Object.values(parsed).find(v => Array.isArray(v));
       return arr ? arr.slice(0, 3) : ['Tell me more.', 'I see.', 'What do you mean?'];
@@ -221,23 +269,26 @@ export class DialogueSession {
         `Focus on: what was discussed, what was revealed, key emotional beats, ` +
         `and any significant details exchanged. Write in past tense, third person.`;
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this._apiKey}`,
+    const summaryResult = await _loggedFetch(
+      'https://api.openai.com/v1/chat/completions',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this._apiKey}`,
+        },
+        body: JSON.stringify({
+          model: this.model,
+          messages: [{ role: 'user', content: prompt }],
+          ..._maxTokensParam(this.model, 220),
+          temperature: 0.3,
+        }),
       },
-      body: JSON.stringify({
-        model: this.model,
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 220,
-        temperature: 0.3,
-      }),
-    });
+      'summary',
+    );
 
-    if (!response.ok) return existingSummary;
-    const data = await response.json();
-    return data.choices[0].message.content.trim();
+    if (!summaryResult.ok) return existingSummary;
+    return summaryResult.data.choices[0].message.content.trim();
   }
 
   // ── Prompt assembly ──────────────────────────────────────────────────────────
@@ -282,31 +333,32 @@ Never skip the narration. Never skip the dialogue. Always use this exact structu
     );
   }
 
-  get systemPrompt() {
+  /**
+   * Build an array of labelled system messages for the API request.
+   * Each section gets its own message with a `name` field so it's easy
+   * to see where each part of the prompt originates in the debug overlay.
+   */
+  get systemMessages() {
     const r = this.dialogueRules;
-    const rulesBlock = r
-      ? Object.values(r).filter(v => typeof v === 'string').map(s => s.trim()).join('\n\n') || null
-      : null;
-
-    // Tells the character who they are speaking with, using whatever name
-    // is set in world.yaml — so this stays correct across any world or player.
     const playerIntro = `The person you are speaking with is named ${this.player}.`;
 
-    const summaryBlock = this.summary
-      ? `PRIOR CONVERSATION SUMMARY (use this as background context):\n${this.summary}`
-      : null;
+    const parts = [
+      { name: 'world-base',          content: this.systemBase },
+      { name: 'rules-precedence',    content: r?.precedence?.trim() },
+      { name: 'rules-style',         content: r?.style?.trim() },
+      { name: 'rules-realism',       content: r?.realism?.trim() },
+      { name: 'character-persona',   content: this.character.persona },
+      { name: 'character-knowledge',  content: this.character.knowledge },
+      { name: 'character-environment', content: this.character.environment },
+      { name: 'player-intro',        content: playerIntro },
+      { name: 'conversation-summary', content: this.summary
+        ? `PRIOR CONVERSATION SUMMARY (use this as background context):\n${this.summary}`
+        : null },
+      { name: 'narrative-format',    content: this._narrativeFormat },
+    ];
 
-    return [
-      this.systemBase,
-      rulesBlock,
-      this.character.persona,
-      this.character.knowledge,
-      this.character.environment,
-      playerIntro,
-      summaryBlock,
-      this._narrativeFormat,
-    ]
-      .filter(Boolean)
-      .join('\n\n');
+    return parts
+      .filter(p => p.content)
+      .map(p => ({ role: 'system', name: p.name, content: p.content }));
   }
 }

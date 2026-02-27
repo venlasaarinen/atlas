@@ -81,7 +81,7 @@ export class WorldManager {
       hud               : this._hud,
       playerName        : worldData.player?.name ?? 'Player',
       playerPersonality : worldData.player?.personality ?? '',
-      worldAiConfig     : { ...(worldData.ai ?? {}), dialogueRules: dialogueRules ?? null },
+      worldAiConfig     : { ...(worldData.ai ?? {}), ...(dialogueRules?.model ? { model: dialogueRules.model } : {}), dialogueRules: dialogueRules ?? null },
     });
     this._mapManager      = new MapManager(app);
 

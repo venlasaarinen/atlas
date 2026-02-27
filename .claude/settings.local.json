@@ -7,7 +7,10 @@
       "Bash(powershell -Command \"Rename-Item ''F:\\\\Atlas\\\\worlds\\\\greywaterridge - Copy'' ''vaevictis''\")",
       "Bash(powershell -Command \"robocopy ''F:\\\\Atlas\\\\worlds\\\\greywaterridge - Copy'' ''F:\\\\Atlas\\\\worlds\\\\vaevictis'' /E /NFL /NDL /NJH /NJS\")",
       "Bash(powershell.exe -Command \"Remove-Item -Path ''F:\\\\Atlas\\\\worlds\\\\greywaterridge - Copy'' -Recurse -Force\")",
-      "Bash(powershell.exe -Command \"Test-Path ''F:\\\\Atlas\\\\worlds\\\\greywaterridge - Copy''\")"
+      "Bash(powershell.exe -Command \"Test-Path ''F:\\\\Atlas\\\\worlds\\\\greywaterridge - Copy''\")",
+      "Bash(cmd.exe:*)",
+      "Bash(\"C:/Program Files/nodejs/npx.cmd\" vite:*)",
+      "Bash(xargs grep:*)"
     ]
   }
 }
