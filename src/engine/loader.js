@@ -23,6 +23,24 @@ const _charGlobFlat = import.meta.glob('../../worlds/*/characters/*.yaml', {
   import: 'default',
 });
 
+/**
+ * Task YAML discovery — tasks live one level deeper than location YAMLs:
+ *   worlds/<world>/maps/<mapId>/<locationId>/<TaskFolder>/<taskId>.yaml
+ */
+const _taskGlob = import.meta.glob('../../worlds/*/maps/*/*/*/*.yaml', {
+  query: '?raw',
+  import: 'default',
+});
+
+/**
+ * Item YAML discovery:
+ *   worlds/<world>/items/<itemId>.yaml
+ */
+const _itemGlob = import.meta.glob('../../worlds/*/items/*.yaml', {
+  query: '?raw',
+  import: 'default',
+});
+
 export async function loadAllWorlds() {
   const worlds = [];
 
@@ -91,6 +109,66 @@ export async function loadYaml(path) {
   } catch {
     return null;
   }
+}
+
+/**
+ * Load all tasks for a given location within a world.
+ * Tasks are YAML files with `type: task` nested one directory deeper than
+ * the location YAML itself.
+ *
+ * @param {string} worldFolder  e.g. "greywaterridge"
+ * @param {string} mapId        e.g. "village"
+ * @param {string} locationId   e.g. "fishingbend"
+ * @returns {Promise<object[]>}
+ */
+export async function loadAllTasks(worldFolder, mapId, locationId) {
+  const tasks  = [];
+  const prefix = `worlds/${worldFolder}/maps/${mapId}/${locationId}/`;
+
+  for (const [path, load] of Object.entries(_taskGlob)) {
+    const normalized = path.replace(/^\.\.\/\.\.\//, '');
+    if (!normalized.startsWith(prefix)) continue;
+
+    try {
+      const raw  = await load();
+      const data = yaml.load(raw);
+      if (data.type !== 'task') continue;
+      data._assetPath = '/' + normalized.replace(/[^/]+\.yaml$/, '');
+      tasks.push(data);
+    } catch (err) {
+      console.error(`[loader] Failed to parse task ${path}:`, err);
+    }
+  }
+
+  return tasks;
+}
+
+/**
+ * Load all item definitions for a given world.
+ * Each item object is augmented with `_assetPath` for resolving images.
+ *
+ * @param {string} worldFolder  e.g. "greywaterridge"
+ * @returns {Promise<object[]>}
+ */
+export async function loadAllItems(worldFolder) {
+  const items = [];
+
+  for (const [path, load] of Object.entries(_itemGlob)) {
+    const m = path.match(/worlds\/([^/]+)\//);
+    if (!m || m[1] !== worldFolder) continue;
+    try {
+      const raw  = await load();
+      const data = yaml.load(raw);
+      data._assetPath = path
+        .replace(/^\.\.\/\.\./, '')
+        .replace(/[^/]+\.yaml$/, '');
+      items.push(data);
+    } catch (err) {
+      console.error(`[loader] Failed to parse item ${path}:`, err);
+    }
+  }
+
+  return items;
 }
 
 /**

@@ -2,3 +2,5 @@ id: fishingbend
 title: "Fishing Bend"
 map: village
 coordinates: [9.9, 37.6]
+background: fishing.jpg
+

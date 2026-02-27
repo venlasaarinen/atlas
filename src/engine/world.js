@@ -1,5 +1,11 @@
 import { MapManager }      from './map.js';
 import { LocationManager }  from './location.js';
+import { TaskManager }      from './task.js';
+import { FlagStore }        from './flags.js';
+import { Inventory }        from './inventory.js';
+import { DayCycle }         from './daycycle.js';
+import { HUD }              from '../ui/hud.js';
+import { loadAllItems }     from './loader.js';
 import { audioManager }     from './audio.js';
 
 /**
@@ -11,6 +17,12 @@ export class WorldManager {
     this.currentWorld      = null;
     this._mapManager       = null;
     this._locationManager  = null;
+    this._taskManager      = null;
+    this._flagStore        = new FlagStore();
+    this._inventory        = new Inventory();
+    this._dayCycle         = null;
+    this._hud              = null;
+    this._itemDefs         = new Map();
   }
 
   /**
@@ -28,8 +40,27 @@ export class WorldManager {
 
     if (this._mapManager)      this._mapManager.destroy();
     if (this._locationManager) this._locationManager.destroy();
+    if (this._taskManager)     this._taskManager.destroy();
+    if (this._hud)             this._hud.destroy();
 
-    this._locationManager = new LocationManager(app);
+    // Load item definitions for this world
+    const itemsList = await loadAllItems(worldData._folder);
+    this._itemDefs = new Map();
+    for (const item of itemsList) {
+      this._itemDefs.set(item.id, item);
+    }
+
+    this._dayCycle        = new DayCycle();
+    this._hud             = new HUD(app, this._inventory, this._itemDefs, this._dayCycle);
+    this._taskManager     = new TaskManager(app, this._flagStore, this._inventory, this._itemDefs, this._hud, this._dayCycle);
+    this._dayCycle.onChange(() => {
+      this._hud.refreshTime();
+      // Toggle night mode on the map when the time segment changes
+      if (this._mapManager) {
+        this._mapManager.setNightMode(this._dayCycle.isNight);
+      }
+    });
+    this._locationManager = new LocationManager(app, this._taskManager);
     this._mapManager      = new MapManager(app);
 
     await this._mapManager.load(

@@ -1,0 +1,23 @@
+id: fishing
+type: task
+title: "Fishing"
+coordinates: [40, 62]
+text: Fishing. Catfish. Salmon. Tuna. Or whatever swims down this river. It takes some time, but it's a good way to pass the day. Maybe you can even catch something big enough to eat for dinner. Just be careful not to get too close to the water's edge...
+outcomes:
+  - text: "No catches today. A shame. Maybe next time."
+    outcome: "No effect"
+  - text: "You catch a fish, not much, but it's something!"
+    outcome: "+1 fish"
+    rewards:
+      - item: fish
+        qty: 1
+  - text: "You catch a big fish! It's a good meal for the night."
+    outcome: "+2 fish"
+    rewards:
+      - item: fish
+        qty: 2
+  - text: "You catch a legendary fish! It's the biggest one you've ever seen!"
+    outcome: "+3 fish"
+    rewards:
+      - item: fish
+        qty: 3

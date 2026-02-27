@@ -1,5 +1,5 @@
 import * as PIXI from 'pixi.js';
-import { loadYaml, loadAllCharacters } from './loader.js';
+import { loadYaml, loadAllCharacters, loadAllTasks } from './loader.js';
 
 // Portrait dimensions (pixels, relative to pin origin = circle centre)
 const PW  = 68;    // portrait width
@@ -14,13 +14,15 @@ const FP  = 2;     // frame padding around portrait
  * outside a character pin to return to the map.
  */
 export class LocationManager {
-  constructor(app) {
+  constructor(app, taskManager) {
     this.app              = app;
+    this._taskManager     = taskManager ?? null;
     this.container        = null;
     this._onResize        = null;
     this._fadeTicker      = null;
     this._tickerCallbacks = [];   // halo ticker fns for character pins
     this._charPins        = [];   // [{ pinContainer, cx, cy }]
+    this._taskPins        = [];   // [{ pinContainer, cx, cy }]
   }
 
   /**
@@ -99,8 +101,29 @@ export class LocationManager {
     });
     title.anchor.set(0.5, 0.5);
     title.x = this.app.screen.width  / 2;
-    title.y = this.app.screen.height / 2;
+    title.y = this.app.screen.height * 0.42;
     container.addChild(title);
+
+    // Optional description text below the title
+    let descText = null;
+    if (locData.text) {
+      descText = new PIXI.Text({
+        text: locData.text,
+        style: {
+          fontFamily: '"Crimson Text", Georgia, serif',
+          fontSize: 15,
+          fill: 0x8a7a60,
+          fontStyle: 'italic',
+          align: 'center',
+          wordWrap: true,
+          wordWrapWidth: Math.min(this.app.screen.width * 0.55, 460),
+        },
+      });
+      descText.anchor.set(0.5, 0);
+      descText.x = this.app.screen.width / 2;
+      descText.y = title.y + 24;
+      container.addChild(descText);
+    }
 
     // Subtle "click to return" hint at the bottom
     const hint = new PIXI.Text({
@@ -117,6 +140,25 @@ export class LocationManager {
     hint.y = this.app.screen.height - 28;
     container.addChild(hint);
 
+    // ── Task pins (rendered after title so they sit on top) ───────────────
+    if (this._taskManager) {
+      const tasks = await loadAllTasks(worldFolder, mapId, locationId);
+      for (const taskData of tasks) {
+        const record = this._taskManager.addTaskPin(taskData, container, (td) => {
+          this._taskManager.showTaskScreen(td, () => {
+            // After sleep or when Night falls, auto-close back to the map
+            if (td.action === 'sleep' || this._taskManager.dayCycle?.isNight) {
+              this._fadeTo(0, 350, () => {
+                this._cleanup();
+                onBack?.();
+              });
+            }
+          });
+        });
+        if (record) this._taskPins.push(record);
+      }
+    }
+
     // Full-screen hit area for click-to-return
     container.eventMode = 'static';
     container.hitArea   = new PIXI.Rectangle(0, 0, this.app.screen.width, this.app.screen.height);
@@ -128,11 +170,20 @@ export class LocationManager {
       if (bg) this._fitSprite(bg);
       this._drawVignette(vignette);
       title.x = width  / 2;
-      title.y = height / 2;
+      title.y = height * 0.42;
+      if (descText) {
+        descText.x = width / 2;
+        descText.y = title.y + 24;
+        descText.style.wordWrapWidth = Math.min(width * 0.55, 460);
+      }
       hint.x  = width  / 2;
       hint.y  = height - 28;
       container.hitArea = new PIXI.Rectangle(0, 0, width, height);
       for (const { pinContainer, cx, cy } of this._charPins) {
+        pinContainer.x = (cx / 100) * width;
+        pinContainer.y = (cy / 100) * height;
+      }
+      for (const { pinContainer, cx, cy } of this._taskPins) {
         pinContainer.x = (cx / 100) * width;
         pinContainer.y = (cy / 100) * height;
       }
@@ -400,6 +451,8 @@ export class LocationManager {
     }
     this._tickerCallbacks = [];
     this._charPins        = [];
+    this._taskPins        = [];
+    if (this._taskManager) this._taskManager.cleanupPins();
 
     if (this._onResize) {
       window.removeEventListener('resize', this._onResize);

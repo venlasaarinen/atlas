@@ -1,0 +1,6 @@
+id: sleep
+title: "Sleep"
+type: task
+action: sleep
+coordinates: [50, 68]
+text: "Rest for the night at the inn."

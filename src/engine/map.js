@@ -14,7 +14,7 @@ export class MapManager {
     this.app             = app;
     this.container       = null;
     this._bg             = null;
-    this._pins           = [];   // [{ pinContainer, cx, cy }]
+    this._pins           = [];   // [{ pinContainer, cx, cy, locId }]
     this._onResize       = null;
     this._tickerCallbacks = [];  // ticker fns to remove on cleanup
   }
@@ -173,7 +173,26 @@ export class MapManager {
     pin.on('pointertap', () => onLocationClick?.(locData));
 
     this.container.addChild(pin);
-    this._pins.push({ pinContainer: pin, cx, cy });
+    this._pins.push({ pinContainer: pin, cx, cy, locId: locData.id });
+  }
+
+  /**
+   * Toggle night mode — dims and disables all location pins except the inn.
+   * @param {boolean} enabled
+   */
+  setNightMode(enabled) {
+    for (const pin of this._pins) {
+      const isInn = pin.locId === 'crimshawinn';
+      if (enabled && !isInn) {
+        pin.pinContainer.alpha     = 0.2;
+        pin.pinContainer.eventMode = 'none';
+        pin.pinContainer.cursor    = 'default';
+      } else {
+        pin.pinContainer.alpha     = 1;
+        pin.pinContainer.eventMode = 'static';
+        pin.pinContainer.cursor    = 'pointer';
+      }
+    }
   }
 
   /** Draw (or redraw) the dot graphic for normal / hovered state. */
